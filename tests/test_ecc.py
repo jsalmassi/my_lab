@@ -11,9 +11,8 @@ import importlib, sys
 sys.path.append("/home/jsalmassi/my_projects/programmingbitcoin/code-ch06")
 #hash160 = importlib.import_module('helper.hash160') # that did not work
 helper = importlib.import_module('helper')
-#encode_base58_checksum = importlib.import_module('helper.encode_base58_checksum') # this one did not work either
-## could these to be done in one line? 
-
+sys.path.append("/home/jsalmassi/my_projects/pybitcointools/cryptos")
+ripemd160 = importlib.import_module('ripemd')
 #from helper import encode_base58_checksum, hash160
 # end js
 
@@ -425,10 +424,16 @@ class S256Point(Point):
             # if non-compressed, starts with b'\x04' followod by self.x and then self.y
             return b'\x04' + self.x.num.to_bytes(32, 'big') + \
                 self.y.num.to_bytes(32, 'big')
-
+# js
+#    def hash160(self, compressed=True):
+#        return helper.hash160(self.sec(compressed)) 
+#
+# the aoove has160 calls helper.hash160 which is defined in programmingbitcoin/code-ch06/helper.py,
+#which in turn calls ripemd160 from hashlip which does not implement it yet. So I am implementing hash160 here directly
     def hash160(self, compressed=True):
-        return helper.hash160(self.sec(compressed))
-
+        #return helper.hash160(self.sec(compressed))
+        return ripemd160.new(hashlib.sha256(self.sec(compressed)).digest()).digest()
+# end js
     def address(self, compressed=True, testnet=False):
         '''Returns the address string'''
         h160 = self.hash160(compressed)
@@ -525,6 +530,7 @@ class S256Test(TestCase):
         self.assertEqual(point.sec(compressed=True), bytes.fromhex(compressed))
 
     def test_address(self):
+       
         secret = 888**3
         mainnet_address = '148dY81A9BmdpMhvYEVznrM45kWN32vSCN'
         testnet_address = 'mieaqB68xDCtbUBYFoUNcmZNwk74xcBfTP'
@@ -698,3 +704,5 @@ class PrivateKeyTest(TestCase):
         pk = PrivateKey(0x1cca23de92fd1862fb5b76e5f4f50eb082165e5191e116c18ed1a6b24be6a53f)
         expected = 'cNYfWuhDpbNM1JWc3c6JTrtrFVxU4AGhUKgw5f93NP2QaBqmxKkg'
         self.assertEqual(pk.wif(compressed=True, testnet=True), expected)
+
+
