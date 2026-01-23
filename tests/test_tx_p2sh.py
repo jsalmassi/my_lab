@@ -1,5 +1,6 @@
 from io import BytesIO
 from unittest import TestCase
+import unittest #js
 
 ## js
 # the next lines will make the modues in /home/jsalmassi/my_projects/programmingbitcoin/code-ch07avaiable 
@@ -7,7 +8,7 @@ from unittest import TestCase
 import importlib, sys
 
 ##from tests.test_tx_ch05 import Script
-sys.path.append("/home/jsalmassi/my_projects/programmingbitcoin/code-ch07")
+sys.path.append("/home/jsalmassi/my_projects/programmingbitcoin/code-ch08")
 #hash160 = importlib.import_module('helper.hash160') # that did not work
 helper = importlib.import_module('helper')
 script = importlib.import_module('script')
@@ -20,14 +21,15 @@ import json
 import requests
 
 from ecc import PrivateKey
-# assign names from the dynamically imported helper module so linters and runtime can resolve them
-encode_varint = helper.encode_varint
-hash256 = helper.hash256
-int_to_little_endian = helper.int_to_little_endian
-little_endian_to_int = helper.little_endian_to_int
-read_varint = helper.read_varint
-SIGHASH_ALL = helper.SIGHASH_ALL
-#from script import Script
+from helper import (
+    encode_varint,
+    hash256,
+    int_to_little_endian,
+    little_endian_to_int,
+    read_varint,
+    SIGHASH_ALL,
+)
+from script import Script
 
 
 class TxFetcher:
@@ -43,7 +45,7 @@ class TxFetcher:
     @classmethod
     def fetch(cls, tx_id, testnet=False, fresh=False):
         if fresh or (tx_id not in cls.cache):
-            url = '{}/tx/{}/hex'.format(cls.get_url(testnet), tx_id)
+            url = '{}/tx/{}.hex'.format(cls.get_url(testnet), tx_id)
             response = requests.get(url)
             try:
                 raw = bytes.fromhex(response.text.strip())
@@ -61,7 +63,6 @@ class TxFetcher:
             cls.cache[tx_id] = tx
         cls.cache[tx_id].testnet = testnet
         return cls.cache[tx_id]
-
 
     @classmethod
     def load_cache(cls, filename):
@@ -161,98 +162,113 @@ class Tx:
         result += int_to_little_endian(self.locktime, 4)
         return result
 
-    # tag::source1[]
     def fee(self):
         '''Returns the fee of this transaction in satoshi'''
+        # initialize input sum and output sum
         input_sum, output_sum = 0, 0
+        # use TxIn.value() to sum up the input amounts
         for tx_in in self.tx_ins:
             input_sum += tx_in.value(self.testnet)
+        # use TxOut.amount to sum up the output amounts
         for tx_out in self.tx_outs:
             output_sum += tx_out.amount
+        # fee is input sum - output sum
         return input_sum - output_sum
-    # end::source1[]
-# %%
-    def sig_hash(self, input_index):
+
+    def sig_hash(self, input_index, redeem_script=None):
         '''Returns the integer representation of the hash that needs to get
         signed for index input_index'''
         # start the serialization with version
         # use int_to_little_endian in 4 bytes
-        # add how many inputs there are using encode_varint
-        # loop through each input using enumerate, so we have the input index
-            # if the input index is the one we're signing
-            # the previous tx's ScriptPubkey is the ScriptSig
-            # Otherwise, the ScriptSig is empty
-            # add the serialization of the input with the ScriptSig we want
-        # add how many outputs there are using encode_varint
-        # add the serialization of each output
-        # add the locktime using int_to_little_endian in 4 bytes
-        # add SIGHASH_ALL using int_to_little_endian in 4 bytes
-        # hash256 the serialization
-        # convert the result to an integer using int.from_bytes(x, 'big')
-        ##raise NotImplementedError
         s = int_to_little_endian(self.version, 4)
+        # add how many inputs there are using encode_varint
         s += encode_varint(len(self.tx_ins))
+        # loop through each input using enumerate, so we have the input index
         for i, tx_in in enumerate(self.tx_ins):
+            # if the input index is the one we're signing
             if i == input_index:
-                s += TxIn(
-                    prev_tx=tx_in.prev_tx,
-                    prev_index=tx_in.prev_index,
-                    script_sig=tx_in.script_pubkey(self.testnet),
-                    sequence=tx_in.sequence,
-                ).serialize()
+                # if the RedeemScript was passed in, that's the ScriptSig
+                # otherwise the previous tx's ScriptPubkey is the ScriptSig
+                if redeem_script:
+                    script_sig = redeem_script
+                else:
+                    script_sig = tx_in.script_pubkey(self.testnet)
+            # Otherwise, the ScriptSig is empty
             else:
-                s += TxIn(
-                    prev_tx=tx_in.prev_tx,
-                    prev_index=tx_in.prev_index,
-                    sequence=tx_in.sequence,
-                ).serialize()
+                script_sig = None
+            # add the serialization of the input with the ScriptSig we want
+            s += TxIn(
+                prev_tx=tx_in.prev_tx,
+                prev_index=tx_in.prev_index,
+                script_sig=script_sig,
+                sequence=tx_in.sequence,
+            ).serialize()
+        # add how many outputs there are using encode_varint
         s += encode_varint(len(self.tx_outs))
+        # add the serialization of each output
         for tx_out in self.tx_outs:
             s += tx_out.serialize()
+        # add the locktime using int_to_little_endian in 4 bytes
         s += int_to_little_endian(self.locktime, 4)
+        # add SIGHASH_ALL using int_to_little_endian in 4 bytes
         s += int_to_little_endian(SIGHASH_ALL, 4)
+        # hash256 the serialization
         h256 = hash256(s)
+        # convert the result to an integer using int.from_bytes(x, 'big')
         return int.from_bytes(h256, 'big')
-# %%
+
     def verify_input(self, input_index):
         '''Returns whether the input has a valid signature'''
         # get the relevant input
-        # grab the previous ScriptPubKey
-        # get the signature hash (z)
-        # combine the current ScriptSig and the previous ScriptPubKey
-        # evaluate the combined script
         tx_in = self.tx_ins[input_index]
+        # grab the previous ScriptPubKey
         script_pubkey = tx_in.script_pubkey(testnet=self.testnet)
-        z = self.sig_hash(input_index)
+        # check to see if the ScriptPubkey is a p2sh using
+        # Script.is_p2sh_script_pubkey()
+            # the last cmd in a p2sh is the RedeemScript
+            # prepend the length of the RedeemScript using encode_varint
+            # parse the RedeemScript
+        # otherwise RedeemScript is None
+        # get the signature hash (z)
+        # pass the RedeemScript to the sig_hash method
+        if script_pubkey.is_p2sh_script_pubkey():
+            cmd = tx_in.script_sig.cmds[-1]
+            raw_redeem = encode_varint(len(cmd)) + cmd
+            redeem_script = Script.parse(BytesIO(raw_redeem))
+        else:
+            redeem_script = None
+        z = self.sig_hash(input_index, redeem_script)
+        # combine the current ScriptSig and the previous ScriptPubKey
         combined = tx_in.script_sig + script_pubkey
+        # evaluate the combined script
         return combined.evaluate(z)
-    #-------------------------------------------
-    # tag::source2[]
+
     def verify(self):
         '''Verify this transaction'''
-        if self.fee() < 0:  # <1>
+        # check that we're not creating money
+        if self.fee() < 0:
             return False
+        # check that each input has a valid ScriptSig
         for i in range(len(self.tx_ins)):
-            if not self.verify_input(i):  # <2>
+            if not self.verify_input(i):
                 return False
         return True
-    # end::source2[]
 
     def sign_input(self, input_index, private_key):
+        '''Signs the input using the private key'''
         # get the signature hash (z)
-        # get der signature of z from private key
-        # append the SIGHASH_ALL to der (use SIGHASH_ALL.to_bytes(1, 'big'))
-        # calculate the sec
-        # initialize a new script with [sig, sec] as the cmds
-        # change input's script_sig to new script
-        # return whether sig is valid using self.verify_input
-        #---------------------
         z = self.sig_hash(input_index)
+        # get der signature of z from private key
         der = private_key.sign(z).der()
+        # append the SIGHASH_ALL to der (use SIGHASH_ALL.to_bytes(1, 'big'))
         sig = der + SIGHASH_ALL.to_bytes(1, 'big')
-        sec = private_key.point.sec() # this is the original line. It is for compressed sec format, ie, default.
-        ##sec = private_key.point.sec( compressed=False) # this would be for uncompressed sec format
-        self.tx_ins[input_index].script_sig = script.Script([sig, sec])
+        # calculate the sec
+        sec = private_key.point.sec()
+        # initialize a new script with [sig, sec] as the cmds
+        script_sig = Script([sig, sec])
+        # change input's script_sig to new script
+        self.tx_ins[input_index].script_sig = script_sig
+        # return whether sig is valid using self.verify_input
         return self.verify_input(input_index)
 
 
@@ -262,7 +278,7 @@ class TxIn:
         self.prev_tx = prev_tx
         self.prev_index = prev_index
         if script_sig is None:
-            self.script_sig = script.Script()
+            self.script_sig = Script()
         else:
             self.script_sig = script_sig
         self.sequence = sequence
@@ -283,7 +299,7 @@ class TxIn:
         # prev_index is an integer in 4 bytes, little endian
         prev_index = little_endian_to_int(s.read(4))
         # use Script.parse to get the ScriptSig
-        script_sig = script.Script.parse(s)
+        script_sig = Script.parse(s)
         # sequence is an integer in 4 bytes, little-endian
         sequence = little_endian_to_int(s.read(4))
         # return an instance of the class (see __init__ for args)
@@ -342,7 +358,7 @@ class TxOut:
         # amount is an integer in 8 bytes, little endian
         amount = little_endian_to_int(s.read(8))
         # use Script.parse to get the ScriptPubKey
-        script_pubkey = script.Script.parse(s)
+        script_pubkey = Script.parse(s)
         # return an instance of the class (see __init__ for args)
         return cls(amount, script_pubkey)
 
@@ -363,7 +379,6 @@ class TxTest(TestCase):
     def setUpClass(cls):
         # fill with cache so we don't have to be online to run these tests
         TxFetcher.load_cache(cls.cache_file)
-        #TxFetcher.fetch('9e067aedc661fca148e13953df75f8ca6eada9ce3b3d8d68631769ac60999156', fresh=True)
 
     def test_parse_version(self):
         raw_tx = bytes.fromhex('0100000001813f79011acb80925dfe69b3def355fe914bd1d96a3f5f71bf8303c6a989c7d1000000006b483045022100ed81ff192e75a3fd2304004dcadb746fa5e24c5031ccfcf21320b0277457c98f02207a986d955c6e0cb35d446a89d3f56100f4d7f67801c31967743a9c8e10615bed01210349fc4e631e3624a545de3f89f5d8684c7b8138bd94bdd531d2e213bf016b278afeffffff02a135ef01000000001976a914bc3b654dca7e56b04dca18f2566cdaf02e8d9ada88ac99c39800000000001976a9141c4bc762dd5423e332166702cb75f40df79fea1288ac19430600')
@@ -413,9 +428,6 @@ class TxTest(TestCase):
         tx_hash = 'd1c789a9c60383bf715f3f6ad9d14b91fe55f3deb369fe5d9280cb1a01793f81'
         index = 0
         want = 42505594
-        #tx_hash = 'f520966138ca56866ed7f1a246ac60c16588158e9f33103c71689bf6b89730da'
-        #index = 0
-        #want = 6889
         tx_in = TxIn(bytes.fromhex(tx_hash), index)
         self.assertEqual(tx_in.value(), want)
 
@@ -437,24 +449,20 @@ class TxTest(TestCase):
         self.assertEqual(tx.fee(), 140500)
 
     def test_sig_hash(self):
-        """ tx = TxFetcher.fetch('452c629d67e41baec3ac6f04fe744b4b9617f8f859c63b3002f8684e7a4fee03')
+        tx = TxFetcher.fetch('452c629d67e41baec3ac6f04fe744b4b9617f8f859c63b3002f8684e7a4fee03')
         want = int('27e0c5994dec7824e56dec6b2fcb342eb7cdb0d0957c2fce9882f715e85d81a6', 16)
-        self.assertEqual(tx.sig_hash(0), want) """
-        tx = TxFetcher.fetch('f520966138ca56866ed7f1a246ac60c16588158e9f33103c71689bf6b89730da')
-        want = int('a952793354e9299436ae91c1cc4f6f0ba666510856df186e4e8929193e6f39f2', 16)
         self.assertEqual(tx.sig_hash(0), want)
-
+        #js
         tx = TxFetcher.fetch('46df1a9484d0a81d03ce0ee543ab6e1a23ed06175c104a178268fad381216c2b', testnet=True)
         want = int('f5aca47ddc06a9d6f94bf4f271d060ea77b866582878143e6867f78af9463fcf', 16)
         self.assertEqual(tx.sig_hash(0), want)
+        print("z returned:", hex(tx.sig_hash(0)))
 
     def test_verify_p2pkh(self):
-        ###tx = TxFetcher.fetch('452c629d67e41baec3ac6f04fe744b4b9617f8f859c63b3002f8684e7a4fee03')
-        #self.assertTrue(tx.verify())
-        tx = TxFetcher.fetch('f520966138ca56866ed7f1a246ac60c16588158e9f33103c71689bf6b89730da', testnet=True)
+        tx = TxFetcher.fetch('452c629d67e41baec3ac6f04fe744b4b9617f8f859c63b3002f8684e7a4fee03')
         self.assertTrue(tx.verify())
-        #tx = TxFetcher.fetch('5418099cc755cb9dd3ebc6cf1a7888ad53a1a3beb5a025bce89eb1bf7f1650a2', testnet=True)
-        #self.assertTrue(tx.verify())
+        tx = TxFetcher.fetch('5418099cc755cb9dd3ebc6cf1a7888ad53a1a3beb5a025bce89eb1bf7f1650a2', testnet=True)
+        self.assertTrue(tx.verify())
 
     def test_verify_p2sh(self):
         tx = TxFetcher.fetch('46df1a9484d0a81d03ce0ee543ab6e1a23ed06175c104a178268fad381216c2b')
@@ -462,20 +470,11 @@ class TxTest(TestCase):
 
     def test_sign_input(self):
         private_key = PrivateKey(secret=8675309)
-        """ stream = BytesIO(bytes.fromhex('010000000199a24308080ab26e6fb65c4eccfadf76749bb5bfa8cb08f291320b3c21e56f0d0d00000000ffffffff02408af701000000001976a914d52ad7ca9b3d096a38e752c2018e6fbc40cdf26f88ac80969800000000001976a914507b27411ccf7f16f10297de6cef3f291623eddf88ac00000000'))
-        tx_obj = Tx.parse(stream, testnet=True)
-        self.assertTrue(tx_obj.sign_input(0, private_key))
-        want = '010000000199a24308080ab26e6fb65c4eccfadf76749bb5bfa8cb08f291320b3c21e56f0d0d0000006b4830450221008ed46aa2cf12d6d81065bfabe903670165b538f65ee9a3385e6327d80c66d3b502203124f804410527497329ec4715e18558082d489b218677bd029e7fa306a72236012103935581e52c354cd2f484fe8ed83af7a3097005b2f9c60bff71d35bd795f54b67ffffffff02408af701000000001976a914d52ad7ca9b3d096a38e752c2018e6fbc40cdf26f88ac80969800000000001976a914507b27411ccf7f16f10297de6cef3f291623eddf88ac00000000' 
-        self.assertEqual(tx_obj.serialize().hex(), want) 
-        ####
-        stream = BytesIO(bytes.fromhex('010000000107445d83fb034ac1e21c88f54be6e4ec873880edf331e5267534e581f05642c6000000008b483045022100d1349394cd0d8fcf5e8e80035dfed9f020fd2086563d95b2933d2084d37c9eea02203bbea030d54c2cca5911dfb192b6f9c699471b2f69e6f8d9e195d35497559fb9014104935581e52c354cd2f484fe8ed83af7a3097005b2f9c60bff71d35bd795f54b673296fb8e372dec2f72836d46f17abd994218feefccefd89b6a3dc2b2da9a6375ffffffff02a00f0000000000001976a9140a44f01f9e59130bf8e372d76630fc6458ed403688aca3030000000000001976a914ee52b9449e861d89de31d212cb1a799489598b8888ac00000000'))
-        tx_obj = Tx.parse(stream, testnet=True)
-        self.assertTrue(tx_obj.sign_input(0, private_key))
-        want = '010000000107445d83fb034ac1e21c88f54be6e4ec873880edf331e5267534e581f05642c6000000008b483045022100d1349394cd0d8fcf5e8e80035dfed9f020fd2086563d95b2933d2084d37c9eea02203bbea030d54c2cca5911dfb192b6f9c699471b2f69e6f8d9e195d35497559fb9014104935581e52c354cd2f484fe8ed83af7a3097005b2f9c60bff71d35bd795f54b673296fb8e372dec2f72836d46f17abd994218feefccefd89b6a3dc2b2da9a6375ffffffff02a00f0000000000001976a9140a44f01f9e59130bf8e372d76630fc6458ed403688aca3030000000000001976a914ee52b9449e861d89de31d212cb1a799489598b8888ac00000000' 
-        self.assertEqual(tx_obj.serialize().hex(), want)
-        """
         stream = BytesIO(bytes.fromhex('010000000199a24308080ab26e6fb65c4eccfadf76749bb5bfa8cb08f291320b3c21e56f0d0d00000000ffffffff02408af701000000001976a914d52ad7ca9b3d096a38e752c2018e6fbc40cdf26f88ac80969800000000001976a914507b27411ccf7f16f10297de6cef3f291623eddf88ac00000000'))
         tx_obj = Tx.parse(stream, testnet=True)
         self.assertTrue(tx_obj.sign_input(0, private_key))
         want = '010000000199a24308080ab26e6fb65c4eccfadf76749bb5bfa8cb08f291320b3c21e56f0d0d0000006b4830450221008ed46aa2cf12d6d81065bfabe903670165b538f65ee9a3385e6327d80c66d3b502203124f804410527497329ec4715e18558082d489b218677bd029e7fa306a72236012103935581e52c354cd2f484fe8ed83af7a3097005b2f9c60bff71d35bd795f54b67ffffffff02408af701000000001976a914d52ad7ca9b3d096a38e752c2018e6fbc40cdf26f88ac80969800000000001976a914507b27411ccf7f16f10297de6cef3f291623eddf88ac00000000'
         self.assertEqual(tx_obj.serialize().hex(), want)
+## added below to run the tests directly
+if __name__ == '__main__':
+    unittest.main()
