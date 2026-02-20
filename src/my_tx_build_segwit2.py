@@ -1,14 +1,21 @@
-
-from ecc import PrivateKey
+# this script is just a copy of the my_tx_build_segwit.py file, the diff between the two files is in
+#  the my_tx_build_segwit.py file, is that I am not using the private key codes from the pybitcointools library to get the
+#  private key and the public key, and I am grabbing it from the electrum wallet.
 from helper import decode_base58, SIGHASH_ALL
-
+from ecc import PrivateKey
+from helper import hash160 as my_hash160
 import importlib, sys
-sys.path.append("/home/jsalmassi/my_projects/programmingbitcoin/code-ch08")
-#hash160 = importlib.import_module('helper.hash160') # that did not work
-#helper = importlib.import_module('helper')
+sys.path.append("/home/jsalmassi/my_projects/programmingbitcoin/code-ch13")
 script = importlib.import_module('script') 
-p2pkh_script = script.p2pkh_script
-from test_tx import TxIn, TxOut, Tx
+p2wpkh_script = script.p2wpkh_script
+
+sys.path.append("/home/jsalmassi/my_projects/pybitcointools/cryptos")
+segwit_addr = importlib.import_module('segwit_addr')
+
+#p2pkh_script = script.p2pkh_script
+
+# from test_txfrom test_tx import TxIn, TxOut, Tx
+from tx import TxIn, TxOut, Tx
 
 cache_file = '/home/jsalmassi/my_projects/my_lab/tx.cache'  #js
 
@@ -45,8 +52,8 @@ cache_file = '/home/jsalmassi/my_projects/my_lab/tx.cache'  #js
 # should be changed to:
 # sec = private_key.point.sec( compressed=False)
 #**************************************
-prev_tx = bytes.fromhex('4e0e8980e7dc523853451983ac9c98201fbf477c303260ae118c439c5bcc50ab')
-prev_index = 1
+prev_tx = bytes.fromhex('96736e75daa32935536c4bb5edf783218cf1d317bfcb48c0c9c5c81cc8491133')
+prev_index = 0
 
 secret = 8675309
 priv = PrivateKey(secret=secret)
@@ -59,49 +66,59 @@ priv = PrivateKey(secret=secret)
 
 # priv.point.sec(compressed=True).hex()
 #: '03935581e52c354cd2f484fe8ed83af7a3097005b2f9c60bff71d35bd795f54b67'
+# this pubkes is used to give hash160 (witness program) for the segwit address generation
+# to be:
+#  'tb1q654d0j5m85yk5w882tpqrrn0h3qvmun0eeade2' #have 50000sats
+#
+#  which is used to get segwit address.from the bech32_addr_conversion.py so this is out WALLET for now.
+#  So we send some sats to it, and then we will spend those coins in this transaction,
+#  and send some of the coins to the target address, and the rest back to our change 
+# address, which is also a segwit address. 
 
 #priv.point.address(compressed=True,testnet=True)
 #: 'mzx5YhAH9kNHtcN481u6WkjeHjYtVeKVh2'
 
-#priv.point.address(compressed=False,testnet=True)
-#: 'n3F6DTFFunQZELpeYvmUCpGcR4D5QYbKFR'
-
 # also worked the private key in WIF format to be 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rdcJfsz6iB4Q'
 # by doing: priv.wif(compressed=True, testnet=True)
 #------ above is just notes to myself ----------------------
-target_address= 'mgTFdsFv2MsbeGXEsnoDBsNTcGTGQ6rSe4' # this is the 3rd address on the electurm-legacy wallet
-
-target_amount = 10000
-# I useded the following to get my address and the change address, I alerady have the funds here
-# from the previouls tx whose id is the avove one
-# my_address = print(priv.point.address(compressed=True, testnet=True)) # which would also be the change address
-# did the above in the python shell to get my change address which is our own address
-change_address = 'n3F6DTFFunQZELpeYvmUCpGcR4D5QYbKFR' # using uncompressed public key address as change address
-# change_address = 'mzx5YhAH9kNHtcN481u6WkjeHjYtVeKVh2' # using compressed public key address as change address
+target_address= 'tb1qmgfr28hxq2p76ymjw8v9ag2lsdqfl8vewe4twg' # both the target address and the change
+#address are segwit addresses from the same wallet my 4.7 single-sig .
+target_amount = 40000
+# change_address = 'tb1qfuwdkf0lr8dvtn9d3za6rg2cg2s88tmggjsq6c'
+change_address = 'tb1q654d0j5m85yk5w882tpqrrn0h3qvmun0eeade2'
 change_amount = 7000
-# fee would be 19069-(10000+7000)=2069 satoshis
-
-#mopVkxp8UhXqRYbCYJsbeE1h1fiF64jcoH
-######priv = decode_base58('cUovB5YGerNeAoWh4aG5zaSXVXiBuCERXCwxwbXj83rmLMFLcXHN')# this is the WIF private key I got from the electrum wallet
-###### corresponding to the 3 address in that wallet ###
-###### or I may have to do: decode_base58(...).hex()?
+#fee 50000-(40000+7000) = 3000 satoshis, which is a reasonable fee for a transaction with 1 input and 2 outputs, and the transaction size is around 200 bytes, so the fee rate is around 15 satoshis/byte, which is a reasonable fee rate for a transaction that we want to be confirmed in the next few blocks.
 
 tx_ins = []
 tx_ins.append(TxIn(prev_tx, prev_index))
 tx_outs = []
-h160 = decode_base58(target_address)
-script_pubkey = script.p2pkh_script(h160)
-#target_satoshis = int(target_amount*100000000)
+
+from helper import hash160 as my_hash160
+decoded_segwit_addr = segwit_addr.decode_segwit_address("tb", "tb1qmgfr28hxq2p76ymjw8v9ag2lsdqfl8vewe4twg")
+print('version is: ',decoded_segwit_addr[0])
+print("decoded_segwit_addr",decoded_segwit_addr[1])
+script_pubkey = script.p2wpkh_script(bytes(decoded_segwit_addr[1]))# same as h160, which is the same as the witness program, which is the same as the hash160 of the public key
+print('script_pubkey for target  target address is: ', script_pubkey.serialize().hex())
+
 target_satoshis = int(target_amount)
 tx_outs.append(TxOut(target_satoshis, script_pubkey))
-h160 = decode_base58(change_address)
-script_pubkey = script.p2pkh_script(h160)
-# change_satoshis = int(change_amount*100000000)
+
+# decoded_segwit_addr2 = segwit_addr.decode_segwit_address("tb", "tb1qfuwdkf0lr8dvtn9d3za6rg2cg2s88tmggjsq6c")
+decoded_segwit_addr2 = segwit_addr.decode_segwit_address("tb", "tb1q654d0j5m85yk5w882tpqrrn0h3qvmun0eeade2")
+print('version is: ',decoded_segwit_addr2[0])
+print("decoded_segwit_addr2",decoded_segwit_addr2[1])
+script_pubkey = script.p2wpkh_script(bytes(decoded_segwit_addr2[1]))
+print('script_pubkey for change address is: ', script_pubkey.serialize().hex())
+
+
 change_satoshis = int(change_amount)
 tx_outs.append(TxOut(change_satoshis, script_pubkey))
-tx_obj = Tx(1, tx_ins, tx_outs, 0, testnet=True)
+
+tx_obj = Tx(1, tx_ins, tx_outs, 0, testnet=True , segwit=True)
 print(tx_obj.sign_input(0, priv))
-print(tx_obj.serialize().hex())
+print("signature of the transaction input is:", tx_obj.tx_ins[0].script_sig.cmds[0].hex())
+print("------------------------------------------------")
+print("tx_obj.serialize().hex():", tx_obj.serialize().hex())
 # the signable transaction hash serialization in hex is:
 # a952793354e9299436ae91c1cc4f6f0ba666510856df186e4e8929193e6f39f2
 # the int() of it or also reffred to it as 'z' is: 76586589365091238788452954561582386286077551076029831532116762774483044874738

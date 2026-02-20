@@ -41,8 +41,9 @@ cache_file = '/home/jsalmassi/my_projects/my_lab/tx.cache'  #js
 prev_tx = bytes.fromhex('c64256f081e5347526e531f3ed803887ece4e64bf5881ce2c14a03fb835d4407')
 prev_index = 0
 
-secret = 8675309
-priv = PrivateKey(secret=secret)
+#secret = 8675309
+#priv = PrivateKey(secret=secret)
+priv = 'cVtxe9txC8fDyqYKSvNmfHeDWoSrzLAm9g7T8iWJSunGhXSSbYgX'
 
 # the follwing is what I have done:
 # worked out the public key in uncompressed sec format (hex) to be:
@@ -62,16 +63,16 @@ priv = PrivateKey(secret=secret)
 # also worked the private key in WIF format to be 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rdcJfsz6iB4Q'
 # by doing: priv.wif(compressed=True, testnet=True)
 #------ above is just notes to myself ----------------------
-target_address= 'mgTFdsFv2MsbeGXEsnoDBsNTcGTGQ6rSe4' # this is the 3rd address on the electurm-legacy wallet
+target_address= 'mqvq3n4SUuCbT1bnVRdTn7DcCX2NXjNnPS' # 
 
-target_amount = 4000
+target_amount = 10000
 # I useded the following to get my address and the change address, I alerady have the funds here
 # from the previouls tx whose id is the avove one
 # my_address = print(priv.point.address(compressed=True, testnet=True)) # which would also be the change address
 # did the above in the python shell to get my change address which is our own address
-change_address = 'n3F6DTFFunQZELpeYvmUCpGcR4D5QYbKFR'
-change_amount = 931
-# fee would be 6889-(4000+931)=1958 satoshis
+change_address = 'tb1q353vk66k4n5e02xjg70rts0ujrdt792y0yr8ccez6303wrydaldswp69mj'
+change_amount = 76000
+# fee would be 88600-(10000+76000)=2600 satoshis
 
 #mopVkxp8UhXqRYbCYJsbeE1h1fiF64jcoH
 ######priv = decode_base58('cUovB5YGerNeAoWh4aG5zaSXVXiBuCERXCwxwbXj83rmLMFLcXHN')# this is the WIF private key I got from the electrum wallet
@@ -94,15 +95,16 @@ tx_outs.append(TxOut(change_satoshis, script_pubkey))
 tx_obj = Tx(1, tx_ins, tx_outs, 0, testnet=True)
 print(tx_obj.sign_input(0, priv))
 print(tx_obj.serialize().hex())
-# the signable transaction hash serialization in hex is:
-# a952793354e9299436ae91c1cc4f6f0ba666510856df186e4e8929193e6f39f2
-# the int() of it or also reffred to it as 'z' is: 76586589365091238788452954561582386286077551076029831532116762774483044874738
-# the signe 'z' or just the sig is (in hex): 3045022100d1349394cd0d8fcf5e8e80035dfed9f020fd2086563d95b2933d2084d37c9eea02203bbea030d54c2cca5911dfb192b6f9c699471b2f69e6f8d9e195d35497559fb901
-# the public key in sec format (hex) is: 03935581e52c354cd2f484fe8ed83af7a3097005b2f9c60bff71d35bd795f54b67
-# now this looks like compressed sec format since it starts with 03, is the one
-# starting with 04 that I figured out above the uncompressed sec format of this?
+################################################
+# I just grabbed this pair of address and private key from the electrum wallet 4.7,
+#  and I have some testnet coins in that address, so I can use that to test the code above.
+#  I will also use the change address from that wallet, which is generated from the
+# same private key, so I can be sure that I have the correct private key and addresses.
+#tb1qfamdt3nrsrg8rze5xnv7ek2mn4tx9pl77ktpgfsj4268a6wkwmeq693pl9 #this has 88600 sats
+#p2wsh:p2wsh:cVtxe9txC8fDyqYKSvNmfHeDWoSrzLAm9g7T8iWJSunGhXSSbYgX
 
-# combined shit:scrpt_sig+script_pubkey:
-#3045022100d1349394cd0d8fcf5e8e80035dfed9f020fd2086563d95b2933d2084d37c9eea02203bbea030d54c2cca5911dfb192b6f9c699471b2f69e6f8d9e195d35497559fb901 03935581e52c354cd2f484fe8ed83af7a3097005b2f9c60bff71d35bd795f54b67 OP_DUP OP_HASH160 ee52b9449e861d89de31d212cb1a799489598b88 OP_EQUALVERIFY OP_CHECKSIG
-# on stack of op_equalverify we have: 
-# 0: 
+# this is the change address: just a differnt address from the same wallet:
+#tb1q353vk66k4n5e02xjg70rts0ujrdt792y0yr8ccez6303wrydaldswp69mj
+
+# using the target address of Electrum 4.5.8 default_wallet:
+#mqvq3n4SUuCbT1bnVRdTn7DcCX2NXjNnPS

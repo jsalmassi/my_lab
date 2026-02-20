@@ -1,5 +1,5 @@
 import sys
-print(sys.executable)
+print('sys.executable:', sys.executable)
 """ 
 import importlib, sys
 sys.path.append("/home/jsalmassi/my_projects/programmingbitcoin/code-ch08")

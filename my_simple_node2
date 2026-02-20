@@ -1,0 +1,80 @@
+from io import BytesIO
+from network import SimpleNode, GetHeadersMessage, HeadersMessage
+from block import Block, GENESIS_BLOCK, LOWEST_BITS
+from helper import calculate_new_bits
+###################### important ######################
+# This file demonstrates how to use SimpleNode to get block headers
+# from a bitcoin node and verify the proof of work and difficulty
+# adjustment.
+# It connects to a bitcoin node, sends a getheaders message,
+# and processes the headers message received in response.
+# It checks the proof of work for each block header and verifies
+# the difficulty adjustment every 2016 blocks.
+# I got the peer ip from running my my_get_seed.py file
+# the most important part is the for loop where we send getheaders and process headers messages
+# it requires that the first previous block is defined before the loop, in the form of a Block object which
+# can be obtained by parsing a raw block bytes. This is if you have the raw block bytes of the previous block.
+# You can get the raw block bytes from a block explorer website.
+# In this example, I requeste blocks 3, 4, and 5, as I sued their hashed Id as start_block
+# # and stop_block. this gives me the first header of  block 4, and then block 5. But I am tricking it by 
+# saying  use block 4 as the previous block, (sinc I dont want to go get the previous block's raw btye and 
+# give it to "Block.pars()" to give me a block object so that the fileds like previou.timestam and previous.prev_hash and ...
+# to work, this way I use the first header that comes in as my first blcok object.. in short 
+# I sacrifise the first block. So, instead of getting headers 4 and 5 we use 4 as or first block object
+# and then we only get 5. 
+# So in the for loop, I skip the first header by using headers.blocks[1:5] instead of headers.blocks
+# This is just for demonstration purposes. so that I dont have to go get the raw bytes of block 3
+# and parse it to get a block object for previous. 
+# In real application, you should get the previous block's raw bytes and parse it to get a block object
+# and use that as previous before the for loop, so that you can process all the headers received.
+#################### end important  ####################
+
+#js begin
+# the next 3 lines work with then commented out lines below #1 which means uncommet thsee and the #1 below
+# and comment out the others
+
+## previous = Block.parse(BytesIO(GENESIS_BLOCK)) # genesis block, 
+#previous = Block.parse(BytesIO(bytes.fromhex('01000000bddd99ccfda39da1b108ce1a5d70038d0a967bacb68b6b63065f626a0000000044f672226090d85db9a9f2fbfe5f0f9609b387af7be5b7fbb7a1767c831c9e995dbe6649ffff001d05e0ed6d'))) # this is block 3
+#first_epoch_timestamp = previous.timestamp
+
+# the next 2 lines work with #2
+#end_block_raw ='0100000085144a84488ea88d221c8bd6c059da090e88f8a2c99690ee55dbba4e00000000e11c48fecdd9e72510ca84f023370c9a38bf91ac5cae88019bee94d24528526344c36649ffff001d1d03e477' #blcok 5
+#end_block = Block.parse(BytesIO(bytes.fromhex(end_block_raw )))
+
+expected_bits = LOWEST_BITS
+count = 1
+node = SimpleNode('65.108.102.41', testnet=False, logging=True) #ip 100.85.176.43 is the own node at home
+node.handshake()
+for _ in range(1):
+    #1 getheaders = GetHeadersMessage(start_block=previous.hash(),end_block= end_block.hash())
+    #2 getheaders = GetHeadersMessage(start_block=previous.hash(),end_block= bytes.fromhex('000000009b7262315dbf071787ad3656097b892abffd1f95a1a022f896f533fc'))
+    getheaders = GetHeadersMessage(start_block=bytes.fromhex('0000000082b5015589a3fdf2d4baff403e6f0be035a5d9742c1cae6295464449')\
+                                   ,end_block= bytes.fromhex('000000009b7262315dbf071787ad3656097b892abffd1f95a1a022f896f533fc')) # block3 and block5
+    #which is going to give the headers from block 4 to block 5 , ie, headers.blocks[0] is block 4, headers.blocks[1] is block 5
+    
+    node.send(getheaders)
+    headers = node.wait_for(HeadersMessage)
+    #js
+    print('len(headers.blocks)',len(headers.blocks))
+    print('the first header:',headers.blocks[0].serialize().hex()) # this is the block 4, meaining that 
+    # is the first block after the start_ block sent in getheaders.
+    previous = headers.blocks[0]
+    first_epoch_timestamp = previous.timestamp
+    # end js
+    # for header in headers.blocks:
+    for header in headers.blocks[1:5]:
+        if not header.check_pow():
+            raise RuntimeError('bad PoW at block {}'.format(count))
+        if header.prev_block != previous.hash():
+            raise RuntimeError('discontinuous block at {}'.format(count))
+        if count % 2016 == 0:
+            time_diff = previous.timestamp - first_epoch_timestamp
+            expected_bits = calculate_new_bits(previous.bits, time_diff)
+            print('expectd bits: ',expected_bits.hex())
+            first_epoch_timestamp = header.timestamp 
+        if header.bits != expected_bits:
+            raise RuntimeError('bad bits at block {}'.format(count)) 
+        print('header serialized:', header.serialize().hex())
+        previous = header
+        count += 1
+        print('Block #{}: {}'.format(count, header.hash().hex()))

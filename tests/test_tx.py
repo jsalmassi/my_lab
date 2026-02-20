@@ -251,7 +251,7 @@ class Tx:
         der = private_key.sign(z).der()
         sig = der + SIGHASH_ALL.to_bytes(1, 'big')
         sec = private_key.point.sec() # this is the original line. It is for compressed sec format, ie, default.
-        ##sec = private_key.point.sec( compressed=False) # this would be for uncompressed sec format
+        #sec = private_key.point.sec( compressed=False) # this would be for uncompressed sec format
         self.tx_ins[input_index].script_sig = script.Script([sig, sec])
         return self.verify_input(input_index)
 
